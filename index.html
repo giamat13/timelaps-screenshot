@@ -1,76 +1,313 @@
 <!DOCTYPE html>
-<html>
+<html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>Auto Screenshot with ZIP</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>צילום מסך אוטומטי ל-ZIP</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --danger: #ef4444;
+            --success: #22c55e;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: var(--card-bg);
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        h2 { margin-bottom: 0.5rem; color: var(--text); }
+        p.subtitle { color: var(--text-muted); margin-bottom: 2rem; font-size: 0.9rem; }
+
+        .settings {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            text-align: right;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label { font-size: 0.85rem; font-weight: 600; }
+
+        input[type="number"] {
+            background: var(--bg);
+            border: 1px solid #334155;
+            color: white;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            outline: none;
+        }
+
+        input:focus { border-color: var(--primary); }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        button {
+            cursor: pointer;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            border: none;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        #startBtn { background-color: var(--primary); color: white; }
+        #startBtn:hover:not(:disabled) { background-color: var(--primary-hover); }
+        
+        #stopBtn { background-color: var(--danger); color: white; }
+        #stopBtn:hover:not(:disabled) { opacity: 0.9; }
+
+        #downloadZipBtn { 
+            background-color: var(--success); 
+            color: white; 
+            grid-column: span 2; 
+            margin-top: 1rem;
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            filter: grayscale(1);
+        }
+
+        #status {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .counter {
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        .preview-area {
+            margin-top: 1rem;
+            max-height: 150px;
+            overflow-y: auto;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
+        }
+
+        .preview-thumb {
+            width: 100%;
+            aspect-ratio: 16/9;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid #334155;
+        }
+
+        .error-msg {
+            background: #450a0a;
+            color: #fecaca;
+            padding: 0.5rem;
+            border-radius: 0.4rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+    </style>
 </head>
 <body>
-<h2>Auto Screenshot Every Minute → ZIP Download</h2>
 
-<button id="startBtn">Start Capturing</button>
-<button id="stopBtn" disabled>Stop</button>
-<button id="downloadZipBtn" disabled>Download ZIP</button>
-<div id="status"></div>
+<div class="container">
+    <h2>צילום מסך אוטומטי</h2>
+    <p class="subtitle">צילום מחזורי של המסך והורדה כקובץ ZIP</p>
+
+    <div id="errorMessage" class="error-msg"></div>
+
+    <div class="settings">
+        <div class="input-group">
+            <label for="intervalInput">מרווח זמן בין צילומים (בשניות):</label>
+            <input type="number" id="intervalInput" value="60" min="1">
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="startBtn">
+            <span>▶</span> התחל צילום
+        </button>
+        <button id="stopBtn" disabled>
+            <span>■</span> עצור
+        </button>
+        <button id="downloadZipBtn" disabled>
+            <span>📥</span> הורד ZIP
+        </button>
+    </div>
+
+    <div id="status">ממתין להתחלה...</div>
+    <div id="previewArea" class="preview-area"></div>
+</div>
 
 <script>
 let captureStream;
 let intervalId;
-let images = []; // מאחסן את כל צילומי המסך
+let images = [];
 
-document.getElementById("startBtn").onclick = async () => {
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
+const downloadZipBtn = document.getElementById("downloadZipBtn");
+const statusDiv = document.getElementById("status");
+const intervalInput = document.getElementById("intervalInput");
+const previewArea = document.getElementById("previewArea");
+const errorMsg = document.getElementById("errorMessage");
+
+function showError(text) {
+    errorMsg.innerText = text;
+    errorMsg.style.display = "block";
+    setTimeout(() => { errorMsg.style.display = "none"; }, 5000);
+}
+
+startBtn.onclick = async () => {
     try {
-        captureStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-        document.getElementById("status").innerText = "Capturing…";
+        const seconds = parseInt(intervalInput.value);
+        if (isNaN(seconds) || seconds < 1) {
+            showError("נא להזין מספר שניות תקין (מינימום 1).");
+            return;
+        }
 
+        captureStream = await navigator.mediaDevices.getDisplayMedia({ 
+            video: { cursor: "always" },
+            audio: false 
+        });
+
+        // ניקוי נתונים קודמים
+        images = [];
+        previewArea.innerHTML = "";
+        
+        statusDiv.innerHTML = `מבצע צילום ראשון...`;
         takeScreenshot();
-        intervalId = setInterval(takeScreenshot, 60000); // כל דקה
+        
+        intervalId = setInterval(takeScreenshot, seconds * 1000);
 
-        document.getElementById("startBtn").disabled = true;
-        document.getElementById("stopBtn").disabled = false;
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        downloadZipBtn.disabled = true;
+        intervalInput.disabled = true;
+
+        // טיפול במקרה שהמשתמש לוחץ על "הפסק שיתוף" בדפדפן
+        captureStream.getVideoTracks()[0].onended = () => stopCapture();
 
     } catch (err) {
-        alert("חייבים לאשר שיתוף מסך.");
+        showError("חובה לאשר שיתוף מסך כדי להתחיל.");
+        console.error(err);
     }
 };
 
-document.getElementById("stopBtn").onclick = () => {
+function stopCapture() {
     clearInterval(intervalId);
-    captureStream.getTracks().forEach(t => t.stop());
+    if (captureStream) {
+        captureStream.getTracks().forEach(t => t.stop());
+    }
 
-    document.getElementById("status").innerText = "Stopped. Ready to download ZIP!";
-    document.getElementById("downloadZipBtn").disabled = false;
-    document.getElementById("stopBtn").disabled = true;
+    statusDiv.innerHTML = `הצילום הופסק. <span class="counter">${images.length}</span> תמונות מוכנות להורדה.`;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    downloadZipBtn.disabled = images.length === 0;
+    intervalInput.disabled = false;
+}
+
+stopBtn.onclick = stopCapture;
+
+downloadZipBtn.onclick = async () => {
+    try {
+        statusDiv.innerText = "מכין קובץ ZIP, אנא המתן...";
+        const zip = new JSZip();
+        
+        images.forEach((blob, i) => {
+            zip.file(`screenshot_${i + 1}.png`, blob);
+        });
+
+        const content = await zip.generateAsync({ type: "blob" });
+        const url = URL.createObjectURL(content);
+        
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `screenshots_${new Date().getTime()}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        statusDiv.innerText = "ההורדה החלה!";
+    } catch (err) {
+        showError("שגיאה ביצירת קובץ ה-ZIP.");
+    }
 };
 
-document.getElementById("downloadZipBtn").onclick = async () => {
-    const zip = new JSZip();
-    images.forEach((file, i) => zip.file(`screenshot_${i + 1}.png`, file));
+async function takeScreenshot() {
+    try {
+        const track = captureStream.getVideoTracks()[0];
+        if (!track || track.readyState !== 'live') return;
 
-    const content = await zip.generateAsync({ type: "blob" });
+        const imageCapture = new ImageCapture(track);
+        const bitmap = await imageCapture.grabFrame();
 
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(content);
-    a.download = "screenshots.zip";
-    a.click();
-};
-
-function takeScreenshot() {
-    const track = captureStream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(track);
-
-    imageCapture.grabFrame().then(bitmap => {
         const canvas = document.createElement("canvas");
         canvas.width = bitmap.width;
         canvas.height = bitmap.height;
-        canvas.getContext("2d").drawImage(bitmap, 0, 0);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(bitmap, 0, 0);
 
         canvas.toBlob(blob => {
             images.push(blob);
-            document.getElementById("status").innerText = `Captured ${images.length} images…`;
+            
+            // עדכון סטטוס
+            statusDiv.innerHTML = `צולמו <span class="counter">${images.length}</span> תמונות...`;
+            
+            // הוספת תצוגה מקדימה
+            const img = document.createElement("img");
+            img.src = URL.createObjectURL(blob);
+            img.className = "preview-thumb";
+            previewArea.appendChild(img);
+            previewArea.scrollTop = previewArea.scrollHeight;
+            
         }, "image/png");
-    });
+    } catch (err) {
+        console.error("Screenshot failed:", err);
+    }
 }
 </script>
+
 </body>
 </html>
