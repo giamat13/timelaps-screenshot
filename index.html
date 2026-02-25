@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Auto Screenshot with ZIP</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+<h2>Auto Screenshot Every Minute → ZIP Download</h2>
+
+<button id="startBtn">Start Capturing</button>
+<button id="stopBtn" disabled>Stop</button>
+<button id="downloadZipBtn" disabled>Download ZIP</button>
+<div id="status"></div>
+
+<script>
+let captureStream;
+let intervalId;
+let images = []; // מאחסן את כל צילומי המסך
+
+document.getElementById("startBtn").onclick = async () => {
+    try {
+        captureStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        document.getElementById("status").innerText = "Capturing…";
+
+        takeScreenshot();
+        intervalId = setInterval(takeScreenshot, 60000); // כל דקה
+
+        document.getElementById("startBtn").disabled = true;
+        document.getElementById("stopBtn").disabled = false;
+
+    } catch (err) {
+        alert("חייבים לאשר שיתוף מסך.");
+    }
+};
+
+document.getElementById("stopBtn").onclick = () => {
+    clearInterval(intervalId);
+    captureStream.getTracks().forEach(t => t.stop());
+
+    document.getElementById("status").innerText = "Stopped. Ready to download ZIP!";
+    document.getElementById("downloadZipBtn").disabled = false;
+    document.getElementById("stopBtn").disabled = true;
+};
+
+document.getElementById("downloadZipBtn").onclick = async () => {
+    const zip = new JSZip();
+    images.forEach((file, i) => zip.file(`screenshot_${i + 1}.png`, file));
+
+    const content = await zip.generateAsync({ type: "blob" });
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(content);
+    a.download = "screenshots.zip";
+    a.click();
+};
+
+function takeScreenshot() {
+    const track = captureStream.getVideoTracks()[0];
+    const imageCapture = new ImageCapture(track);
+
+    imageCapture.grabFrame().then(bitmap => {
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext("2d").drawImage(bitmap, 0, 0);
+
+        canvas.toBlob(blob => {
+            images.push(blob);
+            document.getElementById("status").innerText = `Captured ${images.length} images…`;
+        }, "image/png");
+    });
+}
+</script>
+</body>
+</html>
